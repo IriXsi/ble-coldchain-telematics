@@ -28,7 +28,7 @@ ble-coldchain-telematics/
 ├── docs/
 │   └── MOKO_L02_Product_Specification.pdf
 ├── data/
-│   └── sample_trip.csv    # Sample cold-chain telemetry dataset
+│   └── real_trip_log.csv  # MOKO L02S cold-chain telemetry dataset
 ├── requirements.txt
 └── .gitignore
 ```
