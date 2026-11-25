@@ -14,17 +14,19 @@ Supports:
 ble-coldchain-telematics/
 ├── moko/                   # MOKO SMART L02/L02S driver & frame decoders
 │   ├── __init__.py
-│   ├── parser.py          # Broadcast payload unpacker (21-byte sensor frame)
-│   └── client.py          # BXP-S GATT configuration & log download client
+│   ├── parser.py          # Broadcast payload unpacker (0x80 sensor frame)
+│   └── client.py          # BXP-S GATT CLI: scan, configure, download history
 ├── tzone/                  # Tzone BT04B driver & GATT service handler
 │   ├── __init__.py
-│   ├── parser.py          # Telemetry & historical record unpackers
-│   └── client.py          # Bleak GATT client & authorization handshake
+│   ├── parser.py          # Broadcast & 24-bit flash record decoders
+│   └── dashboard.py       # Tkinter GUI: live scan, GATT sync, CSV export
 ├── examples/               # End-to-end integration examples
-│   ├── live_sniffer.py    # Multi-vendor real-time BLE broadcast listener
-│   └── export_logs.py     # Script to pull flash records into CSV format
+│   └── live_sniffer.py    # Multi-vendor real-time BLE broadcast listener
 ├── tests/                  # Unit test suite (standard unittest)
-│   └── test_parsers.py    # Binary frame decoders verification
+│   ├── __init__.py
+│   └── test_parsers.py    # Vendor-spec frame decoder verification (10 tests)
+├── docs/
+│   └── MOKO_L02_Product_Specification.pdf
 ├── data/
 │   └── sample_trip.csv    # Sample cold-chain telemetry dataset
 ├── requirements.txt
@@ -46,14 +48,39 @@ pip install -r requirements.txt
 ## Quick Start
 
 ### 1. Real-Time Passive Sniffer
-Listen for nearby broadcast packets from deployed cold-chain tags without pairing:
+Listen for nearby broadcast packets from MOKO and Tzone devices simultaneously without pairing:
 
 ```bash
 python examples/live_sniffer.py
 ```
 
-### 2. Verify Decoders
-Run the automated protocol validation suite:
+### 2. MOKO BXP-S GATT CLI
+Scan, configure, and download flash history from MOKO L02/L02S devices:
+
+```bash
+# Scan for nearby MOKO devices
+python moko/client.py scan
+
+# Show all device settings
+python moko/client.py -a AA:BB:CC:DD:EE:FF show
+
+# Sync device clock, set sampling interval, download history to CSV
+python moko/client.py -a AA:BB:CC:DD:EE:FF set --sync-time --th-sampling 60
+python moko/client.py -a AA:BB:CC:DD:EE:FF history --out trip.csv
+
+# Run protocol selftest (no hardware needed)
+python moko/client.py selftest
+```
+
+### 3. Tzone BT04B Dashboard
+Launch the Tkinter GUI to scan, monitor, and download historical records from BT04B loggers:
+
+```bash
+python tzone/dashboard.py
+```
+
+### 4. Verify Decoders
+Run the automated protocol validation suite against vendor-spec byte sequences:
 
 ```bash
 python -m unittest discover tests
