@@ -218,38 +218,44 @@ URL_EXPANSIONS = {0: ".com/", 1: ".org/", 2: ".edu/", 3: ".net/", 4: ".info/",
                   10: ".net", 11: ".info", 12: ".biz", 13: ".gov"}
 
 
-def decode_sensor_info(d):
-    """MOKO 'Sensor info' service data (after the 01 EA UUID), frame type 0x80.
+try:
+    from .parser import parse_moko_payload
+except (ImportError, ValueError):
+    try:
+        from moko.parser import parse_moko_payload
+    except ImportError:
+        from parser import parse_moko_payload
 
-    [0]=0x80 [1]=sensor status [2:4]=magnet count [4:6]=motion count
-    [6:12]=accel X,Y,Z (signed, mg) [12:14]=temp (signed, 0.1 C)
-    [14:16]=humidity (unsigned, 0.1 %RH) [16:18]=battery (>100 = mV, else %)
-    [18:]=tag ID (1-6 bytes).  All multi-byte values big-endian.
-    """
-    if len(d) < 18 or d[0] != 0x80:
+
+def decode_sensor_info(d):
+    """MOKO 'Sensor info' service data (after the 01 EA UUID), frame type 0x80."""
+    parsed = parse_moko_payload(d)
+    if not parsed:
         return None
-    st = d[1]
     out = {
         "frame": "Sensor info",
-        "moving": bool(st & 0x02),                # bit1: 1 = moving, 0 = static
-        "has_motion_sensor": bool(st & 0x04),
-        "has_temp": bool(st & 0x08),
-        "has_humidity": bool(st & 0x10),
-        "has_flash": bool(st & 0x20),
-        "magnet_count": struct.unpack(">H", d[2:4])[0],
-        "motion_count": struct.unpack(">H", d[4:6])[0],
-        "accel_mg": struct.unpack(">hhh", d[6:12]),
-        "tag_id": d[18:].hex(),
+        "moving": parsed["status_flags"]["is_moving"],
+        "has_motion_sensor": parsed["status_flags"]["motion_sensor_equipped"],
+        "has_temp": parsed["status_flags"]["temp_sensor_equipped"],
+        "has_humidity": parsed["status_flags"]["humidity_sensor_equipped"],
+        "has_flash": parsed["status_flags"]["flash_equipped"],
+        "magnet_count": parsed["magnet_count"],
+        "motion_count": parsed["motion_count"],
+        "accel_mg": (
+            parsed["acceleration_mg"]["x"],
+            parsed["acceleration_mg"]["y"],
+            parsed["acceleration_mg"]["z"],
+        ),
+        "tag_id": parsed["tag_id"].lower(),
     }
     if out["has_temp"]:
-        out["temp_c"] = struct.unpack(">h", d[12:14])[0] / 10.0
+        out["temp_c"] = parsed["temperature_c"]
     if out["has_humidity"]:
-        out["humidity"] = struct.unpack(">H", d[14:16])[0] / 10.0
-    b = struct.unpack(">H", d[16:18])[0]
-    if b > 100:
-        out["battery_mv"] = b
+        out["humidity"] = parsed["humidity_rh"]
+    if "battery_voltage_mv" in parsed:
+        out["battery_mv"] = parsed["battery_voltage_mv"]
     else:
-        out["battery_pct"] = b
+        out["battery_pct"] = parsed["battery_percentage"]
     return out
 
 

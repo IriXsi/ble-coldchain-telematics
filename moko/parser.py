@@ -1,6 +1,6 @@
 """
 MOKO L02/L02S BLE Advertising Frame Parser.
-Decodes 21-byte Sensor Info payload (0x80) broadcasted by MOKO beacons.
+Decodes Sensor Info payload (0x80) broadcasted by MOKO beacons.
 """
 
 import struct
@@ -9,29 +9,36 @@ from typing import Any, Dict, Optional
 
 def parse_moko_payload(payload: bytes) -> Optional[Dict[str, Any]]:
     """
-    Parses MOKO Sensor Info payload (21 bytes, Big-Endian).
+    Parses MOKO Sensor Info payload (18-24 bytes, Big-Endian).
     Returns a dictionary of parsed telemetry or None if frame is invalid.
+
+    Binary Layout:
+    [0]     = 0x80 (Frame Type)
+    [1]     = Sensor status byte (flags for motion, equipped sensors)
+    [2:4]   = Magnet trigger count (uint16)
+    [4:6]   = Motion trigger count (uint16)
+    [6:8]   = Accel X (int16 signed, mg)
+    [8:10]  = Accel Y (int16 signed, mg)
+    [10:12] = Accel Z (int16 signed, mg)
+    [12:14] = Temperature (int16 signed, resolution 0.1 °C)
+    [14:16] = Relative Humidity (uint16 unsigned, resolution 0.1 %RH)
+    [16:18] = Battery raw (uint16: >100 is mV, <=100 is percentage)
+    [18:]   = Tag ID (1-6 bytes)
     """
-    header_idx = payload.find(b"\x80")
-    if header_idx == -1:
+    if len(payload) < 18 or payload[0] != 0x80:
         return None
 
-    data = payload[header_idx:]
-    if len(data) < 21:
-        return None
-
-    # Big-Endian format:
+    # Big-Endian unpacking:
     # > B  (Frame Type: 0x80)
-    #   B  (Sensor Status byte)
-    #   H  (Magnet count)
-    #   H  (Motion count)
-    #   h  (Accel X, signed 16-bit)
-    #   h  (Accel Y, signed 16-bit)
-    #   h  (Accel Z, signed 16-bit)
-    #   h  (Temperature, signed 16-bit)
-    #   H  (Humidity, unsigned 16-bit)
-    #   H  (Battery raw)
-    #   3s (Tag ID, 3 bytes)
+    #   B  (Sensor Status)
+    #   H  (Magnet count, uint16)
+    #   H  (Motion count, uint16)
+    #   h  (Accel X, int16 signed)
+    #   h  (Accel Y, int16 signed)
+    #   h  (Accel Z, int16 signed)
+    #   h  (Temperature, int16 signed, 0.1 °C)
+    #   H  (Humidity, uint16 unsigned, 0.1 %RH)
+    #   H  (Battery raw, uint16)
     (
         frame_type,
         sensor_status,
@@ -43,19 +50,17 @@ def parse_moko_payload(payload: bytes) -> Optional[Dict[str, Any]]:
         temp_raw,
         hum_raw,
         battery_raw,
-        tag_id_bytes,
-    ) = struct.unpack(">BBHHhhhHhH3s", data[:21])
+    ) = struct.unpack(">BBHHhhhhHH", payload[:18])
 
-    if frame_type != 0x80:
-        return None
+    tag_id = payload[18:].hex().upper() if len(payload) > 18 else ""
 
     status_flags = {
         "magnetic_approaching": (sensor_status & 0x01) == 0,
-        "is_moving": bool((sensor_status >> 1) & 0x01),
-        "motion_sensor_equipped": bool((sensor_status >> 2) & 0x01),
-        "temp_sensor_equipped": bool((sensor_status >> 3) & 0x01),
-        "humidity_sensor_equipped": bool((sensor_status >> 4) & 0x01),
-        "flash_equipped": bool((sensor_status >> 5) & 0x01),
+        "is_moving": bool(sensor_status & 0x02),
+        "motion_sensor_equipped": bool(sensor_status & 0x04),
+        "temp_sensor_equipped": bool(sensor_status & 0x08),
+        "humidity_sensor_equipped": bool(sensor_status & 0x10),
+        "flash_equipped": bool(sensor_status & 0x20),
     }
 
     battery_info = (
@@ -65,7 +70,7 @@ def parse_moko_payload(payload: bytes) -> Optional[Dict[str, Any]]:
     )
 
     return {
-        "tag_id": tag_id_bytes.hex().upper(),
+        "tag_id": tag_id,
         "temperature_c": round(temp_raw * 0.1, 1),
         "humidity_rh": round(hum_raw * 0.1, 1),
         "acceleration_mg": {"x": accel_x, "y": accel_y, "z": accel_z},
