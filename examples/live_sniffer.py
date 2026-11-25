@@ -4,6 +4,12 @@ Continuously scans and decodes MOKO SMART and Tzone BT04B broadcast advertisemen
 """
 
 import asyncio
+import os
+import sys
+
+# Ensure repo root is on the path when running this script directly
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from bleak import BleakScanner
 from moko.parser import parse_moko_payload
 from tzone.parser import parse_broadcast_data
