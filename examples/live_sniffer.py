@@ -40,8 +40,14 @@ def _is_sane_tzone(parsed: dict) -> bool:
     return True
 
 
+def _anon(mac: str) -> str:
+    """Return last 3 bytes of MAC as anonymous short ID, e.g. 6C:54:00."""
+    return mac.upper().replace("-", ":")[-8:]
+
+
 def detection_callback(device, advertisement_data):
     dev_name = advertisement_data.local_name or device.name or ""
+    dev_id = _anon(device.address)
 
     # 1. MOKO SMART L02 / L02S — identified by Service UUID 0xEA01
     for uuid, payload in advertisement_data.service_data.items():
@@ -50,7 +56,7 @@ def detection_callback(device, advertisement_data):
             if parsed:
                 batt = parsed.get("battery_voltage_mv")
                 batt_str = f"{batt} mV" if batt else f"{parsed.get('battery_percentage')}%"
-                print(f"[MOKO] {device.address} ({dev_name or 'MOKO Sensor'}) | RSSI: {advertisement_data.rssi} dBm")
+                print(f"[MOKO] ...{dev_id} ({dev_name or 'MOKO Sensor'}) | RSSI: {advertisement_data.rssi} dBm")
                 print(f"       Temp: {parsed['temperature_c']} °C | Hum: {parsed['humidity_rh']} %RH | Batt: {batt_str}")
                 print(f"       Motion: {parsed['status_flags']['is_moving']} (Count: {parsed['motion_count']}) | Tag: {parsed['tag_id']}")
                 print("-" * 60)
@@ -77,7 +83,7 @@ def detection_callback(device, advertisement_data):
         b = parsed["battery_percent"]
         t_str = f"{t} °C" if t is not None else "-- °C"
         h_str = f"{h} %RH" if h is not None else "-- %RH"
-        print(f"[TZONE] {device.address} ({dev_name or 'BT04B'}) | RSSI: {advertisement_data.rssi} dBm")
+        print(f"[TZONE] ...{dev_id} ({dev_name or 'BT04B'}) | RSSI: {advertisement_data.rssi} dBm")
         print(f"        ID: {parsed['device_id']} | Temp: {t_str} | Hum: {h_str}")
         print(f"        Battery: {b}% | Status: {parsed['alarm_status_str']}")
         print("-" * 60)
