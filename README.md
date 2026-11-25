@@ -79,5 +79,13 @@ Operates over proprietary GATT Service `27763B10-999C-4D6A-9FC4-C7272BE10900`:
 
 ---
 
+## Development Notes & Attribution
+- **Architecture & Domain Design:** Engineered for industrial cold-chain logistics telemetry workflows based on MOKO SMART and Tzone hardware specifications.
+- **AI-Assisted Scaffolding:** Developed with AI pair-programming assistance for protocol reverse-engineering, package modularization, and unit test generation.
+- **Hardware Validation:** Packet parsers, GATT handshakes, and sample records verified and calibrated against physical MOKO L02S and Tzone BT04B data loggers.
+
+---
+
 ## License
 MIT License.
+
