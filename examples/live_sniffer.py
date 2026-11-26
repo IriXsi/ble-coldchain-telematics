@@ -56,9 +56,11 @@ def detection_callback(device, advertisement_data):
             if parsed:
                 batt = parsed.get("battery_voltage_mv")
                 batt_str = f"{batt} mV" if batt else f"{parsed.get('battery_percentage')}%"
+                door_state = "CLOSED" if parsed["status_flags"]["magnetic_approaching"] else "OPEN"
                 print(f"[MOKO] ...{dev_id} ({dev_name or 'MOKO Sensor'}) | RSSI: {advertisement_data.rssi} dBm")
                 print(f"       Temp: {parsed['temperature_c']} °C | Hum: {parsed['humidity_rh']} %RH | Batt: {batt_str}")
-                print(f"       Motion: {parsed['status_flags']['is_moving']} (Count: {parsed['motion_count']}) | Tag: {parsed['tag_id']}")
+                print(f"       Door: {door_state} (Triggers: {parsed['magnet_count']}) | Motion: {parsed['status_flags']['is_moving']} (Count: {parsed['motion_count']})")
+                print(f"       Tag ID: {parsed['tag_id']}")
                 print("-" * 60)
             return
 
