@@ -1,6 +1,6 @@
 """
 Multi-Vendor BLE Cold-Chain Sensor Live Sniffer.
-Continuously scans and decodes MOKO SMART and Tzone BT04B broadcast advertisements.
+Continuously scans and decodes MOKO SMART BXP-S (L02/L02S/M2) and Tzone BT04B broadcast advertisements.
 """
 
 import asyncio
@@ -11,10 +11,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bleak import BleakScanner
-from moko.parser import parse_moko_payload
+from moko.bxps_frames import parse_bxps_advertising
 from tzone.parser import parse_broadcast_data
-
-MOKO_UUID_16 = "ea01"
 
 # Tzone BT04B identifies itself with Manufacturer ID 0xCB11 in Manufacturer Data,
 # or with a local name containing "BT04" or "Temp".
@@ -49,27 +47,65 @@ def detection_callback(device, advertisement_data):
     dev_name = advertisement_data.local_name or device.name or ""
     dev_id = _anon(device.address)
 
-    # 1. MOKO SMART L02 / L02S — identified by Service UUID 0xEA01
-    for uuid, payload in advertisement_data.service_data.items():
-        if MOKO_UUID_16 in str(uuid).lower():
-            parsed = parse_moko_payload(payload)
-            if parsed:
-                batt = parsed.get("battery_voltage_mv")
-                batt_str = f"{batt} mV" if batt else f"{parsed.get('battery_percentage')}%"
-                door_state = "CLOSED" if parsed["status_flags"]["magnetic_approaching"] else "OPEN"
-                print(f"[MOKO] ...{dev_id} ({dev_name or 'MOKO Sensor'}) | RSSI: {advertisement_data.rssi} dBm")
-                print(f"       Temp: {parsed['temperature_c']} °C | Hum: {parsed['humidity_rh']} %RH | Batt: {batt_str}")
-                print(f"       Door: {door_state} (Triggers: {parsed['magnet_count']}) | Motion: {parsed['status_flags']['is_moving']} (Count: {parsed['motion_count']})")
-                print(f"       Tag ID: {parsed['tag_id']}")
-                print("-" * 60)
-            return
+    # 1. MOKO SMART BXP-S Series (L02, L02S, M2, M2S, etc.)
+    # Decodes all broadcast frames: Sensor Info (0x80), Custom T&H (0x70),
+    # Device Info (0x40), Accel (0x60), iBeacon Scan RSP (0x50), Eddystone (UID/URL/TLM), and Apple iBeacon.
+    moko_frames = parse_bxps_advertising(
+        advertisement_data.service_data,
+        advertisement_data.manufacturer_data,
+        local_name=dev_name,
+    )
+
+    if moko_frames:
+        for frame in moko_frames:
+            ftype = frame.get("frame_type")
+            print(f"[MOKO BXP-S] ...{dev_id} ({dev_name or 'BXP-S Beacon'}) | RSSI: {advertisement_data.rssi} dBm")
+
+            if ftype == "sensor_info":
+                batt = frame.get("battery_voltage_mv")
+                batt_str = f"{batt} mV" if batt else f"{frame.get('battery_percentage')}%"
+                door_state = "OPEN" if frame["status_flags"]["door_open"] else "CLOSED"
+                motion_state = "MOVING" if frame["status_flags"]["is_moving"] else "STATIC"
+                acc = frame.get("acceleration_mg", {})
+                print(f"       [0x80 Sensor Info] Temp: {frame['temperature_c']} °C | Hum: {frame['humidity_rh']} %RH | Batt: {batt_str}")
+                print(f"       Door: {door_state} (Triggers: {frame['hall_trigger_count']}) | Motion: {motion_state} (Triggers: {frame['motion_trigger_count']})")
+                print(f"       Accel: X={acc.get('x')} mg, Y={acc.get('y')} mg, Z={acc.get('z')} mg | Tag ID: {frame['tag_id']}")
+
+            elif ftype == "custom_th":
+                print(f"       [0x70 Custom T&H] Temp: {frame['temperature_c']} °C | Hum: {frame['humidity_rh']} %RH | Batt: {frame['battery_voltage_mv']} mV")
+                print(f"       Device Type: {frame['device_type_desc']} | Interval: {frame['adv_interval_ms']} ms | MAC: {frame['mac_address']}")
+
+            elif ftype == "device_info":
+                sw = frame.get("switch_status", {})
+                prop = frame.get("properties", {})
+                print(f"       [0x40 Device Info] FW: {frame['firmware_version']} | Batt: {frame['battery_voltage_mv']} mV | MAC: {frame['mac_address']}")
+                print(f"       Connectable: {sw.get('connectable')} | Password: {prop.get('password_verification')} | Door: {'OPEN' if sw.get('door_open') else 'CLOSED'}")
+
+            elif ftype == "custom_accel":
+                raw_a = frame.get("raw_accel", {})
+                print(f"       [0x60 Accel Frame] Rate: {frame['sampling_rate']} | Scale: {frame['full_scale']} | Threshold: {frame['motion_threshold_g']}g")
+                print(f"       Raw Accel: X={raw_a.get('x')}, Y={raw_a.get('y')}, Z={raw_a.get('z')} | Batt: {frame['battery_voltage_mv']} mV")
+
+            elif ftype in ("ibeacon", "moko_ibeacon_scan_rsp"):
+                print(f"       [iBeacon] UUID: {frame['uuid']} | Major: {frame['major']} | Minor: {frame['minor']} | RSSI@1m: {frame.get('rssi_1m_dbm')} dBm")
+
+            elif ftype == "eddystone_tlm":
+                batt_val = frame.get("battery_voltage_mv") or f"{frame.get('battery_percentage')}%"
+                print(f"       [Eddystone-TLM] Temp: {frame.get('temperature_c')} °C | Batt: {batt_val} | AdvCount: {frame.get('adv_count')} | Uptime: {frame.get('uptime_seconds')}s")
+
+            elif ftype == "eddystone_uid":
+                print(f"       [Eddystone-UID] Namespace: {frame['namespace_id']} | Instance: {frame['instance_id']} | RSSI@0m: {frame['rssi_0m_dbm']} dBm")
+
+            elif ftype == "eddystone_url":
+                print(f"       [Eddystone-URL] URL: {frame['url']} | RSSI@0m: {frame['rssi_0m_dbm']} dBm")
+
+            print("-" * 65)
+        return
 
     # 2. Tzone BT04B — identified ONLY by Manufacturer ID 0xCB11 or known device name prefix.
-    #    Do NOT fall back to payload length alone — that causes false positives on MOKO gateways.
     tzone_payload = advertisement_data.manufacturer_data.get(TZONE_MFR_ID)
 
     if tzone_payload is None and _is_tzone_name(dev_name):
-        # Device name matches but no MFR ID — try any manufacturer payload as last resort
         for _, m_data in advertisement_data.manufacturer_data.items():
             if len(m_data) >= 16:
                 tzone_payload = m_data
@@ -88,11 +124,12 @@ def detection_callback(device, advertisement_data):
         print(f"[TZONE] ...{dev_id} ({dev_name or 'BT04B'}) | RSSI: {advertisement_data.rssi} dBm")
         print(f"        ID: {parsed['device_id']} | Temp: {t_str} | Hum: {h_str}")
         print(f"        Battery: {b}% | Status: {parsed['alarm_status_str']}")
-        print("-" * 60)
+        print("-" * 65)
 
 
 async def main():
-    print("Starting Multi-Vendor BLE Cold-Chain Sniffer (MOKO L02/L02S + Tzone BT04B)...")
+    print("Starting Multi-Vendor BLE Cold-Chain Sniffer (MOKO BXP-S / L02S + Tzone BT04B)...")
+    print("Listening for all BXP-S frames (Sensor Info 0x80, T&H 0x70, Device Info 0x40, Accel 0x60, iBeacon, Eddystone)...")
     print("Press Ctrl+C to terminate.\n")
     scanner = BleakScanner(detection_callback)
     await scanner.start()

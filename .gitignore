@@ -44,3 +44,16 @@ htmlcov/
 
 # Local logs
 *.log
+
+# Device data & configs
+configs/*.json
+!configs/.gitkeep
+history*.csv
+*.csv
+
+# Aleksey private folder (never committed to git)
+for_Aleksey/
+for Aleksey/
+"for Aleksey"/
+"for_Aleksey"/
+
